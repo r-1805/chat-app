@@ -4,13 +4,12 @@ import { getFirestore } from 'firebase/firestore';
 import { getAnalytics } from "firebase/analytics";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyBNFCS1ivwPhOJqxAcUKvCBT5Lm6y-mL2U",
-  authDomain: "real-time-chat-b7bae.firebaseapp.com",
-  projectId: "real-time-chat-b7bae",
-  storageBucket: "real-time-chat-b7bae.firebasestorage.app",
-  messagingSenderId: "402124716625",
-  appId: "1:402124716625:web:41c915e0076ab7e5d05670",
-  measurementId: "G-QN98Q2VTZV"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 const app = initializeApp(firebaseConfig);
