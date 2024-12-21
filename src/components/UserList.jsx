@@ -1,140 +1,91 @@
-import { useState, useEffect } from 'react';
-import { db, auth } from '../firebase';
-import { collection, query, onSnapshot, doc, updateDoc, arrayUnion, arrayRemove } from 'firebase/firestore';
-import Profile from './Profile';
+import React, { useState, useEffect } from 'react'
+import PropTypes from 'prop-types'
+import { db } from '../firebase'
+import { ref, onValue, remove } from 'firebase/database'
 
-export default function UserList({ currentChannel }) {
-  const [users, setUsers] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showProfile, setShowProfile] = useState(false);
+/**
+ * Component for displaying and managing users in a channel
+ * @component
+ */
+const UserList = ({ currentChannel, onLogout, searchQuery, currentUser }) => {
+  const [users, setUsers] = useState([])
 
   useEffect(() => {
-    if (!currentChannel) return;
+    if (!currentChannel) return
 
-    const q = query(collection(db, 'users'));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const userList = [];
-      snapshot.forEach((doc) => {
-        userList.push({ id: doc.id, ...doc.data() });
-      });
-      setUsers(userList);
-    });
+    const usersRef = ref(db, `channels/${currentChannel.id}/users`)
+    const unsubscribe = onValue(usersRef, (snapshot) => {
+      const usersData = snapshot.val()
+      if (usersData) {
+        const usersList = Object.entries(usersData).map(([id, data]) => ({
+          id,
+          ...data,
+        }))
+        setUsers(usersList)
+      } else {
+        setUsers([])
+      }
+    })
 
-    return () => unsubscribe();
-  }, [currentChannel]);
+    return () => unsubscribe()
+  }, [currentChannel])
 
-  const removeUser = async (userId) => {
-    if (currentChannel?.createdBy !== auth.currentUser.uid) return;
-    
+  /**
+   * Remove user from the current channel
+   * @param {string} userId - ID of the user to remove
+   */
+  const handleRemoveUser = async (userId) => {
+    if (!currentChannel || currentUser.uid !== currentChannel.creatorId) return
+    if (userId === currentUser.uid) return // Cannot remove yourself
+
     try {
-      const channelRef = doc(db, 'channels', currentChannel.id);
-      await updateDoc(channelRef, {
-        members: arrayRemove(userId)
-      });
+      await remove(ref(db, `channels/${currentChannel.id}/users/${userId}`))
     } catch (error) {
-      console.error('Error removing user:', error);
+      console.error('Error removing user:', error)
     }
-  };
-
-  const currentUser = users.find(user => user.id === auth.currentUser?.uid);
-
-  const filteredUsers = users.filter(user => 
-    user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.tag?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  if (!currentChannel) return null;
-
-  if (showProfile) {
-    return <Profile onClose={() => setShowProfile(false)} />;
   }
 
+  const filteredUsers = users.filter(user => 
+    user.displayName?.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
   return (
-    <div className="w-64 bg-dark-200 p-4 border-l border-gray-700">
-      {/* Current User Profile Preview */}
-      <div 
-        className="mb-4 p-3 bg-dark-100 rounded-lg cursor-pointer hover:bg-dark-300 transition-colors duration-200"
-        onClick={() => setShowProfile(true)}
-      >
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-full overflow-hidden bg-dark-300 flex items-center justify-center">
-            {currentUser?.avatarUrl ? (
-              <img
-                src={currentUser.avatarUrl}
-                alt="Avatar"
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <span className="text-gray-500 text-lg">
-                {currentUser?.displayName?.[0]?.toUpperCase() || '?'}
-              </span>
+    <div className="bg-gray-800 w-full h-full p-4 overflow-y-auto">
+      <h2 className="text-xl font-bold mb-4">Users in Channel</h2>
+      <ul className="space-y-2">
+        {filteredUsers.map(user => (
+          <li key={user.id} className="flex items-center justify-between p-2 bg-gray-700 rounded">
+            <span>{user.displayName}</span>
+            {currentChannel?.creatorId === currentUser.uid && user.id !== currentUser.uid && (
+              <button
+                onClick={() => handleRemoveUser(user.id)}
+                className="text-red-500 hover:text-red-400"
+              >
+                Remove
+              </button>
             )}
-          </div>
-          <div className="flex-1">
-            <div className="text-sm font-medium text-white">
-              {currentUser?.displayName || 'Your Profile'}
-            </div>
-            <div className="text-xs text-gray-400">
-              {currentUser?.tag || 'Click to edit profile'}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mb-4">
-        <input
-          type="text"
-          placeholder="Search users..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full rounded-md border-gray-700 bg-dark-100 text-white placeholder-gray-500 focus:ring-accent-blue focus:border-accent-blue"
-        />
-      </div>
-
-      <h3 className="font-medium text-white mb-3">Channel Members</h3>
-      <div className="space-y-2">
-        {filteredUsers.map((user) => (
-          <div
-            key={user.id}
-            className="flex items-center space-x-3 p-2 hover:bg-dark-100 rounded-md transition-colors duration-200"
-          >
-            <div className="w-8 h-8 rounded-full overflow-hidden bg-dark-300 flex items-center justify-center">
-              {user.avatarUrl ? (
-                <img
-                  src={user.avatarUrl}
-                  alt="Avatar"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <span className="text-gray-500">
-                  {user.displayName?.[0]?.toUpperCase() || '?'}
-                </span>
-              )}
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-white">{user.displayName || user.email}</div>
-                  {user.tag && (
-                    <div className="text-xs text-gray-400">{user.tag}</div>
-                  )}
-                </div>
-                {currentChannel.createdBy === auth.currentUser.uid && 
-                 user.id !== auth.currentUser.uid && (
-                  <button
-                    onClick={() => removeUser(user.id)}
-                    className="text-xs text-red-400 hover:text-red-300 transition-colors duration-200"
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
+      <button
+        onClick={onLogout}
+        className="mt-4 w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+      >
+        Logout
+      </button>
     </div>
-  );
+  )
 }
+
+UserList.propTypes = {
+  currentChannel: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired,
+    creatorId: PropTypes.string.isRequired,
+  }),
+  onLogout: PropTypes.func.isRequired,
+  searchQuery: PropTypes.string.isRequired,
+  currentUser: PropTypes.object.isRequired,
+}
+
+export default UserList
