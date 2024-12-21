@@ -1,48 +1,68 @@
-import { useState, useEffect } from 'react';
-import { db, auth } from '../firebase';
-import { collection, query, onSnapshot, addDoc, deleteDoc, doc } from 'firebase/firestore';
+import React, { useState, useEffect } from 'react'
+import PropTypes from 'prop-types'
+import { rtdb } from '../firebase'
+import { ref, onValue, push, set } from 'firebase/database'
 
-export default function ChannelList({ onSelectChannel, currentChannel }) {
-  const [channels, setChannels] = useState([]);
-  const [newChannelName, setNewChannelName] = useState('');
+/**
+ * Component for displaying and managing chat channels
+ * @component
+ */
+const ChannelList = ({ onSelectChannel, currentChannel, currentUser }) => {
+  const [channels, setChannels] = useState([])
+  const [newChannelName, setNewChannelName] = useState('')
   const [showNewChannelForm, setShowNewChannelForm] = useState(false);
 
   useEffect(() => {
-    const q = query(collection(db, 'channels'));
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const channelList = [];
-      snapshot.forEach((doc) => {
-        channelList.push({ id: doc.id, ...doc.data() });
-      });
-      setChannels(channelList);
-    });
+    const channelsRef = ref(rtdb, 'channels')
+    const unsubscribe = onValue(channelsRef, (snapshot) => {
+      const channelsData = snapshot.val()
+      if (channelsData) {
+        const channelsList = Object.entries(channelsData).map(([id, data]) => ({
+          id,
+          ...data,
+        }))
+        setChannels(channelsList)
+      } else {
+        setChannels([])
+      }
+    })
 
-    return () => unsubscribe();
-  }, []);
+    return () => unsubscribe()
+  }, [])
 
   const createChannel = async (e) => {
-    e.preventDefault();
-    if (!newChannelName.trim()) return;
+    e.preventDefault()
+    if (!newChannelName.trim()) return
 
     try {
-      await addDoc(collection(db, 'channels'), {
-        name: newChannelName,
-        createdBy: auth.currentUser.uid,
-        createdAt: new Date(),
-      });
-      setNewChannelName('');
+      const channelsRef = ref(rtdb, 'channels')
+      const newChannelRef = push(channelsRef)
+      const channelId = newChannelRef.key
+
+      await set(newChannelRef, {
+        name: newChannelName.trim(),
+        creatorId: currentUser.uid,
+        createdAt: new Date().toISOString(),
+      })
+
+      // Add creator to channel users
+      await set(ref(rtdb, `channels/${channelId}/users/${currentUser.uid}`), {
+        displayName: currentUser.displayName || currentUser.email,
+        role: 'creator',
+      })
+
+      setNewChannelName('')
       setShowNewChannelForm(false);
     } catch (error) {
-      console.error('Error creating channel:', error);
+      console.error('Error creating channel:', error)
     }
-  };
+  }
 
   const deleteChannel = async (channelId) => {
     try {
-      await deleteDoc(doc(db, 'channels', channelId));
+      await set(ref(rtdb, `channels/${channelId}`), null);
     } catch (error) {
-      console.error('Error deleting channel:', error);
+      console.error('Error deleting channel:', error)
     }
   };
 
@@ -88,7 +108,7 @@ export default function ChannelList({ onSelectChannel, currentChannel }) {
             onClick={() => onSelectChannel(channel)}
           >
             <span>{channel.name}</span>
-            {channel.createdBy === auth.currentUser.uid && (
+            {channel.creatorId === currentUser.uid && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -103,5 +123,16 @@ export default function ChannelList({ onSelectChannel, currentChannel }) {
         ))}
       </div>
     </div>
-  );
+  )
 }
+
+ChannelList.propTypes = {
+  onSelectChannel: PropTypes.func.isRequired,
+  currentChannel: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    name: PropTypes.string.isRequired,
+  }),
+  currentUser: PropTypes.object.isRequired,
+}
+
+export default ChannelList
