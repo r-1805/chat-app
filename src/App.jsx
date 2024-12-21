@@ -27,13 +27,26 @@ function App() {
       if (currentUser) {
         // Get user profile from Realtime Database
         const userRef = ref(rtdb, `users/${currentUser.uid}`)
-        onValue(userRef, (snapshot) => {
+        const unsubscribeProfile = onValue(userRef, (snapshot) => {
           const userData = snapshot.val()
           if (userData) {
-            setUserProfile(userData)
+            setUserProfile({
+              ...userData,
+              uid: currentUser.uid,
+            })
+          } else {
+            // If no profile exists, create one
+            setUserProfile({
+              uid: currentUser.uid,
+              email: currentUser.email,
+              displayName: currentUser.email.split('@')[0],
+              photoURL: null,
+              channels: [],
+            })
           }
         })
         setUser(currentUser)
+        return () => unsubscribeProfile()
       } else {
         setUser(null)
         setUserProfile(null)
@@ -65,7 +78,7 @@ function App() {
         <ChannelList
           onSelectChannel={setSelectedChannel}
           currentChannel={selectedChannel}
-          currentUser={user}
+          currentUser={userProfile || user}
         />
       </div>
       <div className="flex-1 flex flex-col">
@@ -74,7 +87,7 @@ function App() {
       <div className="w-64 bg-gray-800 p-4">
         <SearchUsers />
         <div className="mt-4">
-          <h2 className="text-xl text-white mb-4">Users in Channel</h2>
+          <h2 className="text-xl text-white mb-4">Profile</h2>
           {userProfile && (
             <div className="bg-gray-700 rounded-lg p-4 mb-4">
               <div className="flex items-center space-x-3">
@@ -87,11 +100,17 @@ function App() {
                 )}
                 <div>
                   <div className="text-white font-medium">
-                    {userProfile.displayName || user.email}
+                    {userProfile.displayName}
                   </div>
-                  <div className="text-gray-400 text-sm">{user.email}</div>
+                  <div className="text-gray-400 text-sm">{userProfile.email}</div>
                 </div>
               </div>
+            </div>
+          )}
+          <h2 className="text-xl text-white mb-4">Users in Channel</h2>
+          {selectedChannel && (
+            <div className="space-y-2">
+              {/* Channel users will be displayed here */}
             </div>
           )}
         </div>

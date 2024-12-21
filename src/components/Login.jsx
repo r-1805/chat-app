@@ -1,12 +1,24 @@
 import React, { useState } from 'react'
-import { auth } from '../firebase'
+import { auth, rtdb } from '../firebase'
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth'
+import { ref, set } from 'firebase/database'
 
 const Login = () => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [displayName, setDisplayName] = useState('')
   const [isLogin, setIsLogin] = useState(true)
   const [error, setError] = useState('')
+
+  const createUserProfile = async (user) => {
+    const userRef = ref(rtdb, `users/${user.uid}`)
+    await set(userRef, {
+      email: user.email,
+      displayName: displayName || user.email.split('@')[0],
+      photoURL: null,
+      channels: [],
+    })
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -16,7 +28,8 @@ const Login = () => {
       if (isLogin) {
         await signInWithEmailAndPassword(auth, email, password)
       } else {
-        await createUserWithEmailAndPassword(auth, email, password)
+        const { user } = await createUserWithEmailAndPassword(auth, email, password)
+        await createUserProfile(user)
       }
     } catch (error) {
       setError(error.message)
@@ -49,6 +62,22 @@ const Login = () => {
                 placeholder="Email address"
               />
             </div>
+            {!isLogin && (
+              <div>
+                <label htmlFor="display-name" className="sr-only">
+                  Display Name
+                </label>
+                <input
+                  id="display-name"
+                  name="displayName"
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                  placeholder="Display Name (optional)"
+                />
+              </div>
+            )}
             <div>
               <label htmlFor="password" className="sr-only">
                 Password
@@ -61,7 +90,9 @@ const Login = () => {
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                className={`appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 ${
+                  isLogin ? 'rounded-b-md' : ''
+                } focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm`}
                 placeholder="Password"
               />
             </div>
