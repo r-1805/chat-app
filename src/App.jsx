@@ -1,125 +1,181 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, lazy, Suspense } from 'react'
 import { auth, rtdb } from './firebase'
 import { onAuthStateChanged } from 'firebase/auth'
-import { ref, onValue } from 'firebase/database'
-import Chat from './components/Chat'
-import ChannelList from './components/ChannelList'
-import SearchUsers from './components/SearchUsers'
-import UserProfile from './components/UserProfile'
-import Login from './components/Login'
+import { ref, onValue, set } from 'firebase/database'
 
-/**
- * Main application component that handles authentication and layout
- * @component
- */
+// Ленивая загрузка компонентов
+const Chat = lazy(() => import('./components/Chat'))
+const ChannelList = lazy(() => import('./components/ChannelList'))
+const SearchUsers = lazy(() => import('./components/SearchUsers'))
+const EditProfile = lazy(() => import('./components/EditProfile'))
+const Login = lazy(() => import('./components/Login'))
+
+// Компонент загрузки
+const LoadingSpinner = () => (
+  <div className="flex items-center justify-center min-h-screen bg-gray-900">
+    <div className="text-center">
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
+      <div className="text-white text-lg">Loading...</div>
+    </div>
+  </div>
+)
+
 function App() {
-  // State for managing user authentication, current channel, and user profile
   const [user, setUser] = useState(null)
   const [selectedChannel, setSelectedChannel] = useState(null)
   const [loading, setLoading] = useState(true)
   const [userProfile, setUserProfile] = useState(null)
+  const [channelUsers, setChannelUsers] = useState([])
 
-  /**
-   * Effect hook to handle user authentication state changes
-   */
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
-        // Get user profile from Realtime Database
         const userRef = ref(rtdb, `users/${currentUser.uid}`)
-        const unsubscribeProfile = onValue(userRef, (snapshot) => {
-          const userData = snapshot.val()
-          if (userData) {
-            setUserProfile({
-              ...userData,
-              uid: currentUser.uid,
-            })
-          } else {
-            // If no profile exists, create one
-            setUserProfile({
-              uid: currentUser.uid,
-              email: currentUser.email,
-              displayName: currentUser.email.split('@')[0],
-              photoURL: null,
-              channels: [],
-            })
-          }
-        })
-        setUser(currentUser)
-        return () => unsubscribeProfile()
+        
+        try {
+          const unsubscribeProfile = onValue(userRef, 
+            (snapshot) => {
+              const userData = snapshot.val()
+              if (userData) {
+                setUserProfile({
+                  ...userData,
+                  uid: currentUser.uid,
+                })
+              } else {
+                const newProfile = {
+                  uid: currentUser.uid,
+                  email: currentUser.email,
+                  displayName: currentUser.email.split('@')[0],
+                  photoURL: null,
+                  bio: '',
+                  channels: [],
+                }
+                
+                set(userRef, newProfile)
+                  .then(() => {
+                    setUserProfile(newProfile)
+                  })
+                  .catch((error) => {
+                    console.error('Error creating profile:', error)
+                  })
+              }
+              setLoading(false)
+            },
+            (error) => {
+              console.error('Profile listener error:', error)
+              setLoading(false)
+            }
+          )
+          
+          setUser(currentUser)
+          return () => unsubscribeProfile()
+        } catch (error) {
+          console.error('Profile setup error:', error)
+          setLoading(false)
+        }
       } else {
         setUser(null)
         setUserProfile(null)
+        setLoading(false)
       }
-      setLoading(false)
     })
-
-    // Установка тёмной темы по умолчанию
-    document.documentElement.classList.add('dark')
 
     return () => unsubscribe()
   }, [])
 
+  useEffect(() => {
+    if (selectedChannel) {
+      const channelUsersRef = ref(rtdb, `channels/${selectedChannel.id}/users`)
+      const unsubscribe = onValue(channelUsersRef, (snapshot) => {
+        const usersData = snapshot.val()
+        if (usersData) {
+          const usersList = Object.entries(usersData).map(([uid, data]) => ({
+            uid,
+            ...data
+          }))
+          setChannelUsers(usersList)
+        } else {
+          setChannelUsers([])
+        }
+      })
+      return () => unsubscribe()
+    } else {
+      setChannelUsers([])
+    }
+  }, [selectedChannel])
+
   if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-900">
-        <div className="text-white">Loading...</div>
-      </div>
-    )
+    return <LoadingSpinner />
   }
 
   if (!user) {
-    return <Login />
+    return (
+      <Suspense fallback={<LoadingSpinner />}>
+        <Login />
+      </Suspense>
+    )
   }
 
   return (
     <div className="flex h-screen bg-gray-900">
-      <div className="flex flex-col w-64">
-        <ChannelList
-          onSelectChannel={setSelectedChannel}
-          currentChannel={selectedChannel}
-          currentUser={userProfile || user}
-        />
+      {/* Левая панель - список каналов */}
+      <div className="flex flex-col w-64 bg-gray-800 border-r border-gray-700">
+        <Suspense fallback={<LoadingSpinner />}>
+          <ChannelList
+            onSelectChannel={setSelectedChannel}
+            currentChannel={selectedChannel}
+            currentUser={userProfile || user}
+          />
+        </Suspense>
       </div>
-      <div className="flex-1 flex flex-col">
-        <Chat channel={selectedChannel} currentUser={userProfile || user} />
-      </div>
-      <div className="w-64 bg-gray-800 p-4">
-        <SearchUsers />
-        <div className="mt-4">
-          <h2 className="text-xl text-white mb-4">Profile</h2>
-          {userProfile && (
-            <div className="bg-gray-700 rounded-lg p-4 mb-4">
-              <div className="flex items-center space-x-3">
-                {userProfile.photoURL && (
-                  <img
-                    src={userProfile.photoURL}
-                    alt="Profile"
-                    className="w-10 h-10 rounded-full"
-                  />
-                )}
-                <div>
-                  <div className="text-white font-medium">
-                    {userProfile.displayName}
+
+      {/* Центральная панель - чат и список участников */}
+      <div className="flex flex-1">
+        {/* Чат */}
+        <div className="flex-1 flex flex-col">
+          <Suspense fallback={<LoadingSpinner />}>
+            <Chat channel={selectedChannel} currentUser={userProfile || user} />
+          </Suspense>
+        </div>
+
+        {/* Список участников канала */}
+        {selectedChannel && (
+          <div className="w-64 bg-gray-800 border-l border-gray-700">
+            <div className="p-4">
+              <h3 className="text-lg font-semibold text-white mb-4">Channel Members</h3>
+              <div className="space-y-2">
+                {channelUsers.map((channelUser) => (
+                  <div key={channelUser.uid} className="flex items-center text-gray-300">
+                    <div className="w-2 h-2 rounded-full bg-green-500 mr-2"></div>
+                    <span>{channelUser.displayName}</span>
+                    {channelUser.role === 'creator' && (
+                      <span className="ml-2 text-xs text-gray-500">(Creator)</span>
+                    )}
                   </div>
-                  <div className="text-gray-400 text-sm">{userProfile.email}</div>
-                </div>
+                ))}
               </div>
             </div>
-          )}
-          <h2 className="text-xl text-white mb-4">Users in Channel</h2>
-          {selectedChannel && (
-            <div className="space-y-2">
-              {/* Channel users will be displayed here */}
-            </div>
-          )}
+          </div>
+        )}
+      </div>
+
+      {/* Правая панель - профиль и поиск */}
+      <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col">
+        <div className="p-4 border-b border-gray-700">
+          <Suspense fallback={<LoadingSpinner />}>
+            <EditProfile 
+              userProfile={userProfile} 
+              onUpdate={() => {
+                // Обновление профиля
+              }} 
+            />
+          </Suspense>
         </div>
-        <button
-          onClick={() => auth.signOut()}
-          className="w-full mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-        >
-          Logout
-        </button>
+        <div className="p-4">
+          <Suspense fallback={<LoadingSpinner />}>
+            <SearchUsers />
+          </Suspense>
+        </div>
       </div>
     </div>
   )

@@ -11,13 +11,22 @@ const Login = () => {
   const [error, setError] = useState('')
 
   const createUserProfile = async (user) => {
+    console.log('Creating user profile for:', user.email) // Debug log
     const userRef = ref(rtdb, `users/${user.uid}`)
-    await set(userRef, {
+    const profile = {
       email: user.email,
       displayName: displayName || user.email.split('@')[0],
       photoURL: null,
       channels: [],
-    })
+    }
+    
+    try {
+      await set(userRef, profile)
+      console.log('Profile created successfully:', profile) // Debug log
+    } catch (error) {
+      console.error('Error creating profile:', error) // Debug log
+      throw error
+    }
   }
 
   const handleSubmit = async (e) => {
@@ -26,12 +35,15 @@ const Login = () => {
 
     try {
       if (isLogin) {
+        console.log('Attempting to sign in:', email) // Debug log
         await signInWithEmailAndPassword(auth, email, password)
       } else {
+        console.log('Attempting to create account:', email) // Debug log
         const { user } = await createUserWithEmailAndPassword(auth, email, password)
         await createUserProfile(user)
       }
     } catch (error) {
+      console.error('Auth error:', error) // Debug log
       setError(error.message)
     }
   }
