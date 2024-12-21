@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { BrowserRouter as Router } from 'react-router-dom'
 import Auth from './components/Auth'
 import Chat from './components/Chat'
@@ -27,8 +27,12 @@ function App() {
     setCurrentChannel(null)
   }
 
+  const handleLogin = (user) => {
+    setUser(user)
+  }
+
   if (!user) {
-    return <Auth onLogin={(user) => setUser(user)} />
+    return <Auth onLogin={handleLogin} />
   }
 
   return (

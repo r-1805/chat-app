@@ -3,7 +3,7 @@ import { auth, db } from '../firebase';
 import { createUserWithEmailAndPassword, signInWithEmailAndPassword } from 'firebase/auth';
 import { doc, setDoc } from 'firebase/firestore';
 
-export default function Auth() {
+export default function Auth({ onLogin }) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -16,11 +16,12 @@ export default function Auth() {
     setError('');
 
     try {
+      let userCredential;
       if (isLogin) {
-        await signInWithEmailAndPassword(auth, email, password);
+        userCredential = await signInWithEmailAndPassword(auth, email, password);
       } else {
         // Регистрация нового пользователя
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        userCredential = await createUserWithEmailAndPassword(auth, email, password);
         
         // Сохраняем информацию о пользователе в Firestore
         await setDoc(doc(db, 'users', userCredential.user.uid), {
@@ -33,6 +34,7 @@ export default function Auth() {
           avatarUrl: ''
         });
       }
+      onLogin(userCredential.user);
     } catch (error) {
       setError(error.message);
     }
@@ -53,15 +55,23 @@ export default function Auth() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-gray-300 mb-2" htmlFor="email">
-              Email
-            </label>
+            <label className="block text-gray-300 mb-1">Email</label>
             <input
-              id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full p-2 rounded-lg border border-gray-700 bg-dark-100 text-white placeholder-gray-500 focus:ring-accent-blue focus:border-accent-blue"
+              className="w-full p-2 rounded bg-dark-100 border border-gray-600 text-white focus:outline-none focus:border-blue-500"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-gray-300 mb-1">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full p-2 rounded bg-dark-100 border border-gray-600 text-white focus:outline-none focus:border-blue-500"
               required
             />
           </div>
@@ -69,52 +79,31 @@ export default function Auth() {
           {!isLogin && (
             <>
               <div>
-                <label className="block text-gray-300 mb-2" htmlFor="displayName">
-                  Display Name
-                </label>
+                <label className="block text-gray-300 mb-1">Display Name</label>
                 <input
-                  id="displayName"
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className="w-full p-2 rounded-lg border border-gray-700 bg-dark-100 text-white placeholder-gray-500 focus:ring-accent-blue focus:border-accent-blue"
-                  placeholder="How should we call you?"
+                  className="w-full p-2 rounded bg-dark-100 border border-gray-600 text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block text-gray-300 mb-2" htmlFor="tag">
-                  Username Tag
-                </label>
+                <label className="block text-gray-300 mb-1">Tag (optional)</label>
                 <input
-                  id="tag"
                   type="text"
                   value={tag}
-                  onChange={(e) => setTag(e.target.value.startsWith('@') ? e.target.value : '@' + e.target.value)}
-                  className="w-full p-2 rounded-lg border border-gray-700 bg-dark-100 text-white placeholder-gray-500 focus:ring-accent-blue focus:border-accent-blue"
+                  onChange={(e) => setTag(e.target.value)}
                   placeholder="@username"
+                  className="w-full p-2 rounded bg-dark-100 border border-gray-600 text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
             </>
           )}
 
-          <div>
-            <label className="block text-gray-300 mb-2" htmlFor="password">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full p-2 rounded-lg border border-gray-700 bg-dark-100 text-white placeholder-gray-500 focus:ring-accent-blue focus:border-accent-blue"
-              required
-            />
-          </div>
-
           <button
             type="submit"
-            className="w-full bg-accent-blue text-white p-2 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent-blue transition-colors duration-200"
+            className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
           >
             {isLogin ? 'Login' : 'Register'}
           </button>
@@ -122,9 +111,9 @@ export default function Auth() {
 
         <button
           onClick={() => setIsLogin(!isLogin)}
-          className="w-full mt-4 text-gray-400 hover:text-white transition-colors duration-200"
+          className="w-full mt-4 text-gray-400 hover:text-white focus:outline-none"
         >
-          {isLogin ? 'Need an account? Register' : 'Already have an account? Login'}
+          {isLogin ? "Don't have an account? Register" : 'Already have an account? Login'}
         </button>
       </div>
     </div>
