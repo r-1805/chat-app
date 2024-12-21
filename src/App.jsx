@@ -1,11 +1,10 @@
-import { useState, useEffect } from 'react'
-import { BrowserRouter as Router } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { auth } from './firebase'
+import { onAuthStateChanged } from 'firebase/auth'
 import Auth from './components/Auth'
 import Chat from './components/Chat'
 import ChannelList from './components/ChannelList'
 import UserList from './components/UserList'
-import { auth } from './firebase'
-import { onAuthStateChanged } from 'firebase/auth'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -13,7 +12,12 @@ function App() {
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setUser(user)
+      if (user) {
+        setUser(user)
+      } else {
+        setUser(null)
+        setCurrentChannel(null)
+      }
     })
 
     // Установка тёмной темы по умолчанию
@@ -22,13 +26,12 @@ function App() {
     return () => unsubscribe()
   }, [])
 
-  const handleLogout = () => {
-    setUser(null)
-    setCurrentChannel(null)
-  }
-
   const handleLogin = (user) => {
     setUser(user)
+  }
+
+  const handleLogout = () => {
+    auth.signOut()
   }
 
   if (!user) {
@@ -36,16 +39,14 @@ function App() {
   }
 
   return (
-    <Router basename="/chat-app">
-      <div className="h-screen flex bg-dark-400 text-gray-100">
-        <ChannelList 
-          onSelectChannel={setCurrentChannel} 
-          currentChannel={currentChannel} 
-        />
-        <Chat currentChannel={currentChannel} />
-        <UserList currentChannel={currentChannel} onLogout={handleLogout} />
-      </div>
-    </Router>
+    <div className="h-screen flex bg-dark-400 text-gray-100">
+      <ChannelList 
+        onSelectChannel={setCurrentChannel} 
+        currentChannel={currentChannel} 
+      />
+      <Chat currentChannel={currentChannel} />
+      <UserList currentChannel={currentChannel} onLogout={handleLogout} />
+    </div>
   )
 }
 
