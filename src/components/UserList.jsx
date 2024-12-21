@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
-import { db } from '../firebase'
+import { rtdb } from '../firebase'
 import { ref, onValue, remove } from 'firebase/database'
 
 /**
@@ -13,7 +13,7 @@ const UserList = ({ currentChannel, onLogout, searchQuery, currentUser }) => {
   useEffect(() => {
     if (!currentChannel) return
 
-    const usersRef = ref(db, `channels/${currentChannel.id}/users`)
+    const usersRef = ref(rtdb, `channels/${currentChannel.id}/users`)
     const unsubscribe = onValue(usersRef, (snapshot) => {
       const usersData = snapshot.val()
       if (usersData) {
@@ -39,7 +39,7 @@ const UserList = ({ currentChannel, onLogout, searchQuery, currentUser }) => {
     if (userId === currentUser.uid) return // Cannot remove yourself
 
     try {
-      await remove(ref(db, `channels/${currentChannel.id}/users/${userId}`))
+      await remove(ref(rtdb, `channels/${currentChannel.id}/users/${userId}`))
     } catch (error) {
       console.error('Error removing user:', error)
     }
