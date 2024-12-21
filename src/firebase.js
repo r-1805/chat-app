@@ -1,39 +1,54 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
-import { getDatabase } from 'firebase/database';
+import { initializeApp } from 'firebase/app'
+import { getAuth, connectAuthEmulator } from 'firebase/auth'
+import { getDatabase, connectDatabaseEmulator, ref, onValue } from 'firebase/database'
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
-};
-
-// Log config without sensitive data
-console.log('Firebase config:', {
-  authDomain: firebaseConfig.authDomain,
-  databaseURL: firebaseConfig.databaseURL,
-  projectId: firebaseConfig.projectId,
-  storageBucket: firebaseConfig.storageBucket
-});
-
-// Initialize Firebase
-let app;
-try {
-  app = initializeApp(firebaseConfig);
-  console.log('Firebase initialized successfully');
-} catch (error) {
-  console.error('Firebase initialization error:', error);
-  throw error;
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL
 }
 
-// Initialize services
-const auth = getAuth(app);
-const db = getFirestore(app);
-const rtdb = getDatabase(app);
+console.log('Initializing Firebase with config:', {
+  ...firebaseConfig,
+  apiKey: '***HIDDEN***'
+})
 
-export { auth, db, rtdb };
+// Initialize Firebase
+const app = initializeApp(firebaseConfig)
+
+// Get Auth instance
+const auth = getAuth(app)
+
+// Get Realtime Database instance
+const rtdb = getDatabase(app)
+
+// Enable database persistence
+try {
+  const connectedRef = ref(rtdb, '.info/connected')
+  onValue(connectedRef, (snap) => {
+    if (snap.val() === true) {
+      console.log('Connected to Firebase')
+    } else {
+      console.log('Not connected to Firebase')
+    }
+  })
+} catch (error) {
+  console.error('Error setting up connection monitoring:', error)
+}
+
+// Use emulators in development
+if (process.env.NODE_ENV === 'development') {
+  try {
+    connectAuthEmulator(auth, 'http://localhost:9099')
+    connectDatabaseEmulator(rtdb, 'localhost', 9000)
+    console.log('Connected to Firebase emulators')
+  } catch (error) {
+    console.error('Error connecting to emulators:', error)
+  }
+}
+
+export { auth, rtdb }

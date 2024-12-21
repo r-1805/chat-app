@@ -1,58 +1,76 @@
 import React, { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
 import { rtdb } from '../firebase'
-import { ref, onValue, push, set, get } from 'firebase/database'
+import { ref, onValue, push, set, get, serverTimestamp } from 'firebase/database'
 
-/**
- * Component for displaying and managing chat channels
- * @component
- */
 const ChannelList = ({ onSelectChannel, currentChannel, currentUser }) => {
   const [channels, setChannels] = useState([])
   const [newChannelName, setNewChannelName] = useState('')
   const [showNewChannelForm, setShowNewChannelForm] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [retryCount, setRetryCount] = useState(0)
 
   useEffect(() => {
+    if (!currentUser?.uid) {
+      setError('User not authenticated')
+      setLoading(false)
+      return
+    }
+
     const loadChannels = async () => {
       try {
         setLoading(true)
         setError(null)
+        console.log('Loading channels for user:', currentUser.uid)
         
-        // Сначала получаем список каналов пользователя
+        // Подписываемся на изменения в списке каналов пользователя
         const userChannelsRef = ref(rtdb, `users/${currentUser.uid}/channels`)
-        const userChannelsSnapshot = await get(userChannelsRef)
-        const userChannels = userChannelsSnapshot.val() || {}
         
-        // Затем получаем все каналы
-        const channelsRef = ref(rtdb, 'channels')
-        
-        const unsubscribe = onValue(channelsRef, async (snapshot) => {
+        const unsubscribe = onValue(userChannelsRef, async (snapshot) => {
           try {
-            const channelsData = snapshot.val()
-            if (channelsData) {
-              // Фильтруем каналы, оставляя только те, в которых участвует пользователь
-              const channelsList = Object.entries(channelsData)
-                .filter(([id]) => userChannels[id])
-                .map(([id, data]) => ({
-                  id,
-                  ...data,
-                }))
-                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-              
-              setChannels(channelsList)
-            } else {
-              setChannels([])
-            }
+            const userChannels = snapshot.val() || {}
+            console.log('User channels:', Object.keys(userChannels).length)
+            
+            // Подписываемся на изменения в каналах
+            const channelsRef = ref(rtdb, 'channels')
+            const unsubscribeChannels = onValue(channelsRef, (channelsSnapshot) => {
+              try {
+                const channelsData = channelsSnapshot.val() || {}
+                console.log('All channels:', Object.keys(channelsData).length)
+                
+                // Фильтруем и преобразуем данные
+                const channelsList = Object.entries(channelsData)
+                  .filter(([id]) => userChannels[id])
+                  .map(([id, data]) => ({
+                    id,
+                    ...data,
+                    role: userChannels[id]?.role
+                  }))
+                  .sort((a, b) => {
+                    const aTime = a.lastMessage?.timestamp || a.createdAt
+                    const bTime = b.lastMessage?.timestamp || b.createdAt
+                    return new Date(bTime) - new Date(aTime)
+                  })
+                
+                console.log('Filtered channels:', channelsList.length)
+                setChannels(channelsList)
+                setLoading(false)
+              } catch (err) {
+                console.error('Error processing channels data:', err)
+                setError('Error loading channels')
+                setLoading(false)
+              }
+            })
+            
+            return () => unsubscribeChannels()
           } catch (err) {
-            console.error('Error processing channels data:', err)
+            console.error('Error processing user channels:', err)
             setError('Error loading channels')
-          } finally {
             setLoading(false)
           }
         }, (err) => {
-          console.error('Channel listener error:', err)
+          console.error('User channels listener error:', err)
           setError('Error loading channels')
           setLoading(false)
         })
@@ -66,20 +84,22 @@ const ChannelList = ({ onSelectChannel, currentChannel, currentUser }) => {
     }
 
     loadChannels()
-  }, [currentUser.uid])
+  }, [currentUser?.uid])
 
   const createChannel = async (e) => {
     e.preventDefault()
-    if (!newChannelName.trim()) return
+    if (!newChannelName.trim() || !currentUser?.uid) return
 
     try {
+      setError(null)
+      const timestamp = serverTimestamp()
+
+      // 1. Создаем новый канал
       const channelsRef = ref(rtdb, 'channels')
       const newChannelRef = push(channelsRef)
       const channelId = newChannelRef.key
-      const timestamp = new Date().toISOString()
 
-      // Создаем канал
-      await set(newChannelRef, {
+      const channelData = {
         name: newChannelName.trim(),
         creatorId: currentUser.uid,
         createdAt: timestamp,
@@ -91,24 +111,27 @@ const ChannelList = ({ onSelectChannel, currentChannel, currentUser }) => {
             joinedAt: timestamp
           }
         }
-      })
+      }
 
-      // Добавляем канал в список каналов пользователя
-      const userChannelsRef = ref(rtdb, `users/${currentUser.uid}/channels/${channelId}`)
-      await set(userChannelsRef, {
+      // 2. Добавляем канал в общий список
+      await set(newChannelRef, channelData)
+      console.log('Channel created:', channelId)
+
+      // 3. Добавляем канал в список каналов пользователя
+      const userChannelRef = ref(rtdb, `users/${currentUser.uid}/channels/${channelId}`)
+      await set(userChannelRef, {
         role: 'creator',
         joinedAt: timestamp
       })
+      console.log('Channel added to user channels')
 
       setNewChannelName('')
       setShowNewChannelForm(false)
-      
-      // Выбираем новый канал
+
+      // 4. Выбираем новый канал
       onSelectChannel({
         id: channelId,
-        name: newChannelName.trim(),
-        creatorId: currentUser.uid,
-        createdAt: timestamp
+        ...channelData
       })
     } catch (error) {
       console.error('Error creating channel:', error)
@@ -117,14 +140,39 @@ const ChannelList = ({ onSelectChannel, currentChannel, currentUser }) => {
   }
 
   const deleteChannel = async (channelId) => {
+    if (!currentUser?.uid) return
+
     try {
-      // Удаляем канал из общего списка
-      await set(ref(rtdb, `channels/${channelId}`), null)
+      setError(null)
       
-      // Удаляем канал из списка каналов пользователя
-      await set(ref(rtdb, `users/${currentUser.uid}/channels/${channelId}`), null)
-      
-      // Если текущий канал - это удаляемый канал, сбрасываем выбор
+      // 1. Проверяем права на удаление
+      const channelRef = ref(rtdb, `channels/${channelId}`)
+      const channelSnapshot = await get(channelRef)
+      const channelData = channelSnapshot.val()
+
+      if (channelData?.creatorId !== currentUser.uid) {
+        setError('You do not have permission to delete this channel')
+        return
+      }
+
+      // 2. Удаляем канал из общего списка
+      await set(channelRef, null)
+      console.log('Channel deleted:', channelId)
+
+      // 3. Удаляем канал из списков всех пользователей
+      const usersRef = ref(rtdb, 'users')
+      const usersSnapshot = await get(usersRef)
+      const users = usersSnapshot.val() || {}
+
+      const deletePromises = Object.keys(users).map(uid => {
+        const userChannelRef = ref(rtdb, `users/${uid}/channels/${channelId}`)
+        return set(userChannelRef, null)
+      })
+
+      await Promise.all(deletePromises)
+      console.log('Channel removed from all users')
+
+      // 4. Если был выбран удаленный канал, сбрасываем выбор
       if (currentChannel?.id === channelId) {
         onSelectChannel(null)
       }
@@ -147,8 +195,17 @@ const ChannelList = ({ onSelectChannel, currentChannel, currentUser }) => {
       </div>
 
       {error && (
-        <div className="bg-red-500 text-white p-2 rounded-md mb-4">
-          {error}
+        <div className="bg-red-500 text-white p-2 rounded-md mb-4 flex items-center justify-between">
+          <span>{error}</span>
+          <button
+            onClick={() => {
+              setError(null)
+              setRetryCount(prev => prev + 1)
+            }}
+            className="text-sm underline hover:no-underline ml-2"
+          >
+            Retry
+          </button>
         </div>
       )}
 
@@ -159,11 +216,12 @@ const ChannelList = ({ onSelectChannel, currentChannel, currentUser }) => {
             value={newChannelName}
             onChange={(e) => setNewChannelName(e.target.value)}
             placeholder="Channel name"
-            className="w-full rounded-md border-gray-700 bg-dark-100 text-white placeholder-gray-500 focus:ring-accent-blue focus:border-accent-blue mb-2"
+            className="w-full rounded-md border-gray-700 bg-dark-100 text-white placeholder-gray-500 focus:ring-accent-blue focus:border-accent-blue mb-2 p-2"
           />
           <button
             type="submit"
-            className="w-full bg-accent-blue text-white rounded-md py-2 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent-blue transition-colors duration-200"
+            disabled={!newChannelName.trim()}
+            className="w-full bg-accent-blue text-white rounded-md py-2 hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-accent-blue transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Create Channel
           </button>
@@ -191,14 +249,21 @@ const ChannelList = ({ onSelectChannel, currentChannel, currentUser }) => {
               }`}
               onClick={() => onSelectChannel(channel)}
             >
-              <span>{channel.name}</span>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{channel.name}</div>
+                {channel.lastMessage && (
+                  <div className="text-xs text-gray-400 truncate">
+                    {channel.lastMessage.senderName}: {channel.lastMessage.text}
+                  </div>
+                )}
+              </div>
               {channel.creatorId === currentUser.uid && (
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
                     deleteChannel(channel.id)
                   }}
-                  className="text-sm hover:text-red-400 transition-colors duration-200"
+                  className="ml-2 text-sm hover:text-red-400 transition-colors duration-200"
                 >
                   ×
                 </button>
