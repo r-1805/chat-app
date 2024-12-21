@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react'
-import { auth } from './firebase'
-import { onAuthStateChanged } from 'firebase/auth'
+import { useState } from 'react'
+import { BrowserRouter as Router } from 'react-router-dom'
 import Auth from './components/Auth'
 import Chat from './components/Chat'
 import ChannelList from './components/ChannelList'
 import UserList from './components/UserList'
-import { Router } from 'react-router-dom'
+import { auth } from './firebase'
+import { onAuthStateChanged } from 'firebase/auth'
 
 function App() {
   const [user, setUser] = useState(null)
@@ -22,8 +22,13 @@ function App() {
     return () => unsubscribe()
   }, [])
 
+  const handleLogout = () => {
+    setUser(null)
+    setCurrentChannel(null)
+  }
+
   if (!user) {
-    return <Auth />
+    return <Auth onLogin={(user) => setUser(user)} />
   }
 
   return (
@@ -34,7 +39,7 @@ function App() {
           currentChannel={currentChannel} 
         />
         <Chat currentChannel={currentChannel} />
-        <UserList currentChannel={currentChannel} />
+        <UserList currentChannel={currentChannel} onLogout={handleLogout} />
       </div>
     </Router>
   )
